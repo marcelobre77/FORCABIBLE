@@ -1,561 +1,596 @@
-import React, { useState, useEffect, useRef } from 'react';
-
-// Main App component for the Biblical Hangman game
-const App = () => {
-    // State to store words for each team - Initialized as an array of objects
-    const [teamWords, setTeamWords] = useState([{}, {}, {}]);
-    // State to store guessed letters for each team - Initialized as an array of arrays
-    const [guessedLetters, setGuessedLetters] = useState([[], [], []]);
-    // State to track incorrect guesses for each team - Initialized as an array of numbers
-    const [incorrectGuesses, setIncorrectGuesses] = useState([0, 0, 0]);
-    // State for the current active team (0: Left, 1: Middle, 2: Right)
-    const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
-    // State for game status (playing, won, lost, ended)
-    const [gameStatus, setGameStatus] = useState('playing');
-    // State for the message displayed to the user
-    const [message, setMessage] = useState('');
-    // Ref for the letter input field
-    const letterInputRef = useRef(null);
-    // Refs for the full guess input fields
-    const fullGuessInputRefs = [useRef(null), useRef(null), useRef(null)];
-
-    // Word lists for each category
-    const wordCategories = {
-        book: [
-            "Gênesis", "Êxodo", "Levítico", "Números", "Deuteronômio", "Josué", "Juízes", "Rute", "Samuel", "Reis",
-            "Crônicas", "Esdras", "Neemias", "Ester", "Jó", "Salmos", "Provérbios", "Eclesiastes", "Cânticos",
-            "Isaías", "Jeremias", "Lamentações", "Ezequiel", "Daniel", "Oséias", "Joel", "Amós", "Obadias",
-            "Jonas", "Miquéias", "Naum", "Habacuque", "Sofonias", "Ageu", "Zacarias", "Malaquias", "Mateus",
-            "Marcos", "Lucas", "João", "Atos", "Romanos", "Coríntios", "Gálatas", "Efésios", "Filipenses",
-            "Colossenses", "Tessalonicenses", "Timóteo", "Tito", "Filemom", "Hebreus", "Tiago", "Pedro",
-            "João", "Judas", "Apocalipse"
-        ],
-        name: [
-            "Jesus", "Moisés", "Davi", "Abraão", "Maria", "Pedro", "Paulo", "Ester", "Rute", "José",
-            "Adão", "Eva", "Noé", "Sara", "Isaque", "Rebeca", "Jacó", "Raquel", "Judá", "Benjamim",
-            "Samuel", "Saul", "Salomão", "Jonas", "Elias", "Eliseu", "João Batista", "Marta", "Maria Madalena",
-            "Nicodemos", "Zaqueu", "Barnabé", "Timóteo", "Baruque", "Absalão", "Balaão", "Sansão", "Gideão", "Débora",
-            "Miriam", "Jônatas", "Isaías", "Jeremias", "Ezequiel", "Daniel", "Noemi", "Boaz", "Jezabel", "Acabe"
-        ],
-        place: [
-            "Jerusalém", "Belém", "Nazaré", "Egito", "Canaã", "Roma", "Galiléia", "Jordão", "Jericó", "Samaria",
-            "Babilônia", "Ninive", "Éden", "Gólgota", "Getsemani", "Emaús", "Cafarnaum", "Efrata", "Berseba",
-            "Damasco", "Antioquia", "Éfeso", "Corinto", "Tessalônica", "Pérgamo", "Esmirna", "Sardes", // 'Filipos' removed
-            "Laodicéia", "Tiatira", "Pátmos", "Sodoma", "Gomorra", "Ur", "Harã", "Siquém", "Betel", "Hebrom"
-        ]
-    };
-
-    // Helper function to remove accents and convert to lowercase for comparison
-    const normalizeString = (str) => {
-        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    };
-
-    // Initialize game on component mount
-    useEffect(() => {
-        initializeGame();
-    }, []);
-
-    // Effect to focus on the letter input when the turn changes
-    useEffect(() => {
-        if (letterInputRef.current && gameStatus === 'playing') {
-            letterInputRef.current.focus();
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forca Bíblica</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel CDN to transpile JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* Ensure Inter font is used for consistency */
+        body {
+            font-family: 'Inter', sans-serif;
         }
-    }, [currentTeamIndex, gameStatus]);
-
-    // Function to select unique words for a team
-    const selectUniqueWords = (existingWords = []) => {
-        const selected = {};
-        for (const category of ['book', 'name', 'place']) {
-            const availableWords = wordCategories[category].filter(word => !existingWords.includes(normalizeString(word)));
-            if (availableWords.length === 0) {
-                console.warn(`No more unique words for category ${category}. Resetting word pool.`);
-                selected[category] = wordCategories[category][Math.floor(Math.random() * wordCategories[category].length)];
-            } else {
-                selected[category] = availableWords[Math.floor(Math.random() * availableWords.length)];
-            }
-            existingWords.push(normalizeString(selected[category])); // Add normalized word to existing words to prevent duplicates
+        input, button, select, textarea {
+            font-family: 'Inter', sans-serif;
         }
-        return selected;
-    };
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-    // Game initialization logic
-    const initializeGame = () => {
-        const newTeamWords = [];
-        const newGuessedLetters = [];
-        const newIncorrectGuesses = [];
-        const allUsedWords = [];
+    <script type="text/babel">
+        // Main App component for the Biblical Hangman game
+        const App = () => {
+            // Import React hooks directly from React global object
+            const { useState, useEffect, useRef } = React;
 
-        // Assign words and initial states for each of the 3 teams
-        for (let i = 0; i < 3; i++) {
-            newTeamWords[i] = selectUniqueWords(allUsedWords); // Ensure words are unique across teams if possible
-            newGuessedLetters[i] = [];
-            newIncorrectGuesses[i] = 0;
-        }
+            // State to store words for each team - Initialized as an array of objects
+            const [teamWords, setTeamWords] = useState([{}, {}, {}]);
+            // State to store guessed letters for each team - Initialized as an array of arrays
+            const [guessedLetters, setGuessedLetters] = useState([[], [], []]);
+            // State to track incorrect guesses for each team - Initialized as an array of numbers
+            const [incorrectGuesses, setIncorrectGuesses] = useState([0, 0, 0]);
+            // State for the current active team (0: Left, 1: Middle, 2: Right)
+            const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
+            // State for game status (playing, won, lost, ended)
+            const [gameStatus, setGameStatus] = useState('playing');
+            // State for the message displayed to the user
+            const [message, setMessage] = useState('');
+            // Ref for the letter input field
+            const letterInputRef = useRef(null);
+            // Refs for the full guess input fields
+            const fullGuessInputRefs = [useRef(null), useRef(null), useRef(null)];
 
-        setTeamWords(newTeamWords);
-        setGuessedLetters(newGuessedLetters);
-        setIncorrectGuesses(newIncorrectGuesses);
-        setCurrentTeamIndex(0); // Start with the first team
-        setGameStatus('playing');
-        setMessage('VAMOS COMEÇAR! TIME ESQUERDO, SUA VEZ!');
+            // Word lists for each category
+            const wordCategories = {
+                book: [
+                    "Gênesis", "Êxodo", "Levítico", "Números", "Deuteronômio", "Josué", "Juízes", "Rute", "Samuel", "Reis",
+                    "Crônicas", "Esdras", "Neemias", "Ester", "Jó", "Salmos", "Provérbios", "Eclesiastes", "Cânticos",
+                    "Isaías", "Jeremias", "Lamentações", "Ezequiel", "Daniel", "Oséias", "Joel", "Amós", "Obadias",
+                    "Jonas", "Miquéias", "Naum", "Habacuque", "Sofonias", "Ageu", "Zacarias", "Malaquias", "Mateus",
+                    "Marcos", "Lucas", "João", "Atos", "Romanos", "Coríntios", "Gálatas", "Efésios", "Filipenses",
+                    "Colossenses", "Tessalonicenses", "Timóteo", "Tito", "Filemom", "Hebreus", "Tiago", "Pedro",
+                    "João", "Judas", "Apocalipse"
+                ],
+                name: [
+                    "Jesus", "Moisés", "Davi", "Abraão", "Maria", "Pedro", "Paulo", "Ester", "Rute", "José",
+                    "Adão", "Eva", "Noé", "Sara", "Isaque", "Rebeca", "Jacó", "Raquel", "Judá", "Benjamim",
+                    "Samuel", "Saul", "Salomão", "Jonas", "Elias", "Eliseu", "João Batista", "Marta", "Maria Madalena",
+                    "Nicodemos", "Zaqueu", "Barnabé", "Timóteo", "Baruque", "Absalão", "Balaão", "Sansão", "Gideão", "Débora",
+                    "Miriam", "Jônatas", "Isaías", "Jeremias", "Ezequiel", "Daniel", "Noemi", "Boaz", "Jezabel", "Acabe"
+                ],
+                place: [
+                    "Jerusalém", "Belém", "Nazaré", "Egito", "Canaã", "Roma", "Galiléia", "Jordão", "Jericó", "Samaria",
+                    "Babilônia", "Ninive", "Éden", "Gólgota", "Getsemani", "Emaús", "Cafarnaum", "Efrata", "Berseba",
+                    "Damasco", "Antioquia", "Éfeso", "Corinto", "Tessalônica", "Pérgamo", "Esmirna", "Sardes", // 'Filipos' removed
+                    "Laodicéia", "Tiatira", "Pátmos", "Sodoma", "Gomorra", "Ur", "Harã", "Siquém", "Betel", "Hebrom"
+                ]
+            };
 
-        // Clear input fields
-        if (letterInputRef.current) letterInputRef.current.value = '';
-        fullGuessInputRefs.forEach(ref => {
-            if (ref.current) ref.current.value = '';
-        });
-    };
+            // Helper function to remove accents and convert to lowercase for comparison
+            const normalizeString = (str) => {
+                return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+            };
 
-    // Get the current team's data
-    const currentWords = teamWords[currentTeamIndex];
-    const currentGuessedLetters = guessedLetters[currentTeamIndex];
-    const currentIncorrectGuesses = incorrectGuesses[currentTeamIndex];
-    const currentTeamName = ["ESQUERDO", "MEIO", "DIREITO"][currentTeamIndex];
+            // Initialize game on component mount
+            useEffect(() => {
+                initializeGame();
+            }, []);
 
+            // Effect to focus on the letter input when the turn changes
+            useEffect(() => {
+                if (letterInputRef.current && gameStatus === 'playing') {
+                    letterInputRef.current.focus();
+                }
+            }, [currentTeamIndex, gameStatus]);
 
-    // Mask the words with blanks for display, now returning an array of characters for individual display
-    const getMaskedWord = (word, guessedLettersArray) => {
-        if (!word || typeof word !== 'string' || !guessedLettersArray || !Array.isArray(guessedLettersArray)) {
-            return [];
-        }
-        return word.split('').map(char => {
-            const normalizedChar = normalizeString(char);
-            // If the normalized character is in guessed letters, or it's not an alphabet character, display the original char
-            return guessedLettersArray.includes(normalizedChar) || !/[a-zà-ú]/i.test(char) ? char.toUpperCase() : '_';
-        });
-    };
+            // Function to select unique words for a team
+            const selectUniqueWords = (existingWords = []) => {
+                const selected = {};
+                for (const category of ['book', 'name', 'place']) {
+                    const availableWords = wordCategories[category].filter(word => !existingWords.includes(normalizeString(word)));
+                    if (availableWords.length === 0) {
+                        console.warn(`No more unique words for category ${category}. Resetting word pool.`);
+                        selected[category] = wordCategories[category][Math.floor(Math.random() * wordCategories[category].length)];
+                    } else {
+                        selected[category] = availableWords[Math.floor(Math.random() * availableWords.length)];
+                    }
+                    existingWords.push(normalizeString(selected[category])); // Add normalized word to existing words to prevent duplicates
+                }
+                return selected;
+            };
 
-    // Check if a team has won (all words guessed)
-    const checkWinWithSpecificGuessedLetters = (wordsOfTeam, specificGuessedLetters) => {
-        if (!wordsOfTeam || typeof wordsOfTeam !== 'object' || !specificGuessedLetters || !Array.isArray(specificGuessedLetters)) {
-            return false;
-        }
-        return Object.values(wordsOfTeam).every(word =>
-            word.split('').every(char =>
-                !/[a-zà-ú]/i.test(char) || specificGuessedLetters.includes(normalizeString(char))
-            )
-        );
-    };
+            // Game initialization logic
+            const initializeGame = () => {
+                const newTeamWords = [];
+                const newGuessedLetters = [];
+                const newIncorrectGuesses = [];
+                const allUsedWords = [];
 
-    // Function to reveal all words for a given team
-    const revealAllWordsForTeam = (teamIdToReveal) => {
-        const teamSpecificWords = teamWords[teamIdToReveal];
-        if (!teamSpecificWords) return;
-
-        const allLetters = new Set();
-        Object.values(teamSpecificWords).forEach(word => {
-            word.split('').forEach(char => {
-                if (/[a-zà-ú]/i.test(char)) allLetters.add(normalizeString(char));
-            });
-        });
-
-        setGuessedLetters(prev => {
-            const newState = [...prev];
-            newState[teamIdToReveal] = Array.from(allLetters);
-            return newState;
-        });
-    };
-
-    // Handle a letter guess
-    const handleLetterGuess = (e) => {
-        e.preventDefault();
-        const inputLetter = letterInputRef.current.value; // Get original input for message
-        const normalizedInputLetter = normalizeString(inputLetter); // Normalize for logic
-        letterInputRef.current.value = ''; // Clear input
-
-        if (!normalizedInputLetter || normalizedInputLetter.length !== 1 || !/[a-zà-ú]/.test(normalizedInputLetter)) {
-            setMessage('POR FAVOR, DIGITE UMA ÚNICA LETRA VÁLIDA.');
-            return;
-        }
-        if (currentGuessedLetters.includes(normalizedInputLetter)) {
-            setMessage(`A LETRA "${inputLetter.toUpperCase()}" JÁ FOI TENTADA. TENTE OUTRA.`);
-            return;
-        }
-
-        let letterFound = false;
-        // Check if the normalized letter exists in any of the current team's words (normalized)
-        for (const category in currentWords) {
-            if (normalizeString(currentWords[category]).includes(normalizedInputLetter)) {
-                letterFound = true;
-                break;
-            }
-        }
-
-        // Calculate the new state *before* setting it, so it can be used immediately
-        const newGuessedLettersForCurrentTeam = [...currentGuessedLetters, normalizedInputLetter];
-        let newIncorrectCountForCurrentTeam = currentIncorrectGuesses;
-        if (!letterFound) {
-            newIncorrectCountForCurrentTeam = currentIncorrectGuesses + 1;
-        }
-
-        // Update states. These calls schedule a re-render.
-        // This makes the visual update (letters appearing, hangman parts) immediate.
-        setGuessedLetters(prev => {
-            const newState = [...prev];
-            newState[currentTeamIndex] = newGuessedLettersForCurrentTeam;
-            return newState;
-        });
-        setIncorrectGuesses(prev => {
-            const newState = [...prev];
-            newState[currentTeamIndex] = newIncorrectCountForCurrentTeam;
-            return newState;
-        });
-
-        // Set initial message. This message reflects the immediate outcome.
-        if (letterFound) {
-            setMessage(`"${inputLetter.toUpperCase()}" ESTÁ CORRETO!`);
-        } else {
-            setMessage(`"${inputLetter.toUpperCase()}" ESTÁ INCORRETO. VOCÊ TEM ${7 - newIncorrectCountForCurrentTeam} CHANCES RESTANTES.`);
-        }
-
-        // Defer final game logic (win/lose/switch turn) to allow UI update.
-        setTimeout(() => {
-            if (checkWinWithSpecificGuessedLetters(currentWords, newGuessedLettersForCurrentTeam)) {
-                setMessage(`PARABÉNS! TIME ${currentTeamName} ADIVINHOU TODAS AS SUAS PALAVRAS E VENCEU O JOGO!`);
-                setGameStatus('won');
-                // Reveal all words for losing teams
+                // Assign words and initial states for each of the 3 teams
                 for (let i = 0; i < 3; i++) {
-                    if (i !== currentTeamIndex) { // If not the winning team
-                        revealAllWordsForTeam(i);
+                    newTeamWords[i] = selectUniqueWords(allUsedWords); // Ensure words are unique across teams if possible
+                    newGuessedLetters[i] = [];
+                    newIncorrectGuesses[i] = 0;
+                }
+
+                setTeamWords(newTeamWords);
+                setGuessedLetters(newGuessedLetters);
+                setIncorrectGuesses(newIncorrectGuesses);
+                setCurrentTeamIndex(0); // Start with the first team
+                setGameStatus('playing');
+                setMessage('VAMOS COMEÇAR! TIME ESQUERDO, SUA VEZ!');
+
+                // Clear input fields
+                if (letterInputRef.current) letterInputRef.current.value = '';
+                fullGuessInputRefs.forEach(ref => {
+                    if (ref.current) ref.current.value = '';
+                });
+            };
+
+            // Get the current team's data
+            const currentWords = teamWords[currentTeamIndex];
+            const currentGuessedLetters = guessedLetters[currentTeamIndex];
+            const currentIncorrectGuesses = incorrectGuesses[currentTeamIndex];
+            const currentTeamName = ["ESQUERDO", "MEIO", "DIREITO"][currentTeamIndex];
+
+
+            // Mask the words with blanks for display, now returning an array of characters for individual display
+            const getMaskedWord = (word, guessedLettersArray) => {
+                if (!word || typeof word !== 'string' || !guessedLettersArray || !Array.isArray(guessedLettersArray)) {
+                    return [];
+                }
+                return word.split('').map(char => {
+                    const normalizedChar = normalizeString(char);
+                    // If the normalized character is in guessed letters, or it's not an alphabet character, display the original char
+                    return guessedLettersArray.includes(normalizedChar) || !/[a-zà-ú]/i.test(char) ? char.toUpperCase() : '_';
+                });
+            };
+
+            // Check if a team has won (all words guessed)
+            const checkWinWithSpecificGuessedLetters = (wordsOfTeam, specificGuessedLetters) => {
+                if (!wordsOfTeam || typeof wordsOfTeam !== 'object' || !specificGuessedLetters || !Array.isArray(specificGuessedLetters)) {
+                    return false;
+                }
+                return Object.values(wordsOfTeam).every(word =>
+                    word.split('').every(char =>
+                        !/[a-zà-ú]/i.test(char) || specificGuessedLetters.includes(normalizeString(char))
+                    )
+                );
+            };
+
+            // Function to reveal all words for a given team
+            const revealAllWordsForTeam = (teamIdToReveal) => {
+                const teamSpecificWords = teamWords[teamIdToReveal];
+                if (!teamSpecificWords) return;
+
+                const allLetters = new Set();
+                Object.values(teamSpecificWords).forEach(word => {
+                    word.split('').forEach(char => {
+                        if (/[a-zà-ú]/i.test(char)) allLetters.add(normalizeString(char));
+                    });
+                });
+
+                setGuessedLetters(prev => {
+                    const newState = [...prev];
+                    newState[teamIdToReveal] = Array.from(allLetters);
+                    return newState;
+                });
+            };
+
+            // Handle a letter guess
+            const handleLetterGuess = (e) => {
+                e.preventDefault();
+                const inputLetter = letterInputRef.current.value; // Get original input for message
+                const normalizedInputLetter = normalizeString(inputLetter); // Normalize for logic
+                letterInputRef.current.value = ''; // Clear input
+
+                if (!normalizedInputLetter || normalizedInputLetter.length !== 1 || !/[a-zà-ú]/.test(normalizedInputLetter)) {
+                    setMessage('POR FAVOR, DIGITE UMA ÚNICA LETRA VÁLIDA.');
+                    return;
+                }
+                if (currentGuessedLetters.includes(normalizedInputLetter)) {
+                    setMessage(`A LETRA "${inputLetter.toUpperCase()}" JÁ FOI TENTADA. TENTE OUTRA.`);
+                    return;
+                }
+
+                let letterFound = false;
+                // Check if the normalized letter exists in any of the current team's words (normalized)
+                for (const category in currentWords) {
+                    if (normalizeString(currentWords[category]).includes(normalizedInputLetter)) {
+                        letterFound = true;
+                        break;
                     }
                 }
-            } else if (newIncorrectCountForCurrentTeam >= 7) {
-                setMessage(`TIME ${currentTeamName} FOI ENFORCADO! AS PALAVRAS ERAM: LIVRO: "${currentWords.book.toUpperCase()}", NOME: "${currentWords.name.toUpperCase()}", LUGAR: "${currentWords.place.toUpperCase()}".`);
-                setGameStatus('lost');
-                // Reveal words for this team since they lost
-                revealAllWordsForTeam(currentTeamIndex);
-                // After current team loses, check if game should end or switch to another active team
+
+                // Calculate the new state *before* setting it, so it can be used immediately
+                const newGuessedLettersForCurrentTeam = [...currentGuessedLetters, normalizedInputLetter];
+                let newIncorrectCountForCurrentTeam = currentIncorrectGuesses;
+                if (!letterFound) {
+                    newIncorrectCountForCurrentTeam = currentIncorrectGuesses + 1;
+                }
+
+                // Update states. These calls schedule a re-render.
+                // This makes the visual update (letters appearing, hangman parts) immediate.
+                setGuessedLetters(prev => {
+                    const newState = [...prev];
+                    newState[currentTeamIndex] = newGuessedLettersForCurrentTeam;
+                    return newState;
+                });
+                setIncorrectGuesses(prev => {
+                    const newState = [...prev];
+                    newState[currentTeamIndex] = newIncorrectCountForCurrentTeam;
+                    return newState;
+                });
+
+                // Set initial message. This message reflects the immediate outcome.
+                if (letterFound) {
+                    setMessage(`"${inputLetter.toUpperCase()}" ESTÁ CORRETO!`);
+                } else {
+                    setMessage(`"${inputLetter.toUpperCase()}" ESTÁ INCORRETO. VOCÊ TEM ${7 - newIncorrectCountForCurrentTeam} CHANCES RESTANTES.`);
+                }
+
+                // Defer final game logic (win/lose/switch turn) to allow UI update.
                 setTimeout(() => {
-                    const activeTeamsLeft = [0, 1, 2].filter(id =>
-                        !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
-                    );
-                    if (activeTeamsLeft.length === 0) {
-                        setGameStatus('ended');
-                        setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
-                        // Reveal all words for any remaining losing teams if game ended this way
+                    if (checkWinWithSpecificGuessedLetters(currentWords, newGuessedLettersForCurrentTeam)) {
+                        setMessage(`PARABÉNS! TIME ${currentTeamName} ADIVINHOU TODAS AS SUAS PALAVRAS E VENCEU O JOGO!`);
+                        setGameStatus('won');
+                        // Reveal all words for losing teams
                         for (let i = 0; i < 3; i++) {
-                            if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
+                            if (i !== currentTeamIndex) { // If not the winning team
                                 revealAllWordsForTeam(i);
                             }
                         }
+                    } else if (newIncorrectCountForCurrentTeam >= 7) {
+                        setMessage(`TIME ${currentTeamName} FOI ENFORCADO! AS PALAVRAS ERAM: LIVRO: "${currentWords.book.toUpperCase()}", NOME: "${currentWords.name.toUpperCase()}", LUGAR: "${currentWords.place.toUpperCase()}".`);
+                        setGameStatus('lost');
+                        // Reveal words for this team since they lost
+                        revealAllWordsForTeam(currentTeamIndex);
+                        // After current team loses, check if game should end or switch to another active team
+                        setTimeout(() => {
+                            const activeTeamsLeft = [0, 1, 2].filter(id =>
+                                !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
+                            );
+                            if (activeTeamsLeft.length === 0) {
+                                setGameStatus('ended');
+                                setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
+                                // Reveal all words for any remaining losing teams if game ended this way
+                                for (let i = 0; i < 3; i++) {
+                                    if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
+                                        revealAllWordsForTeam(i);
+                                    }
+                                }
+                            } else {
+                                switchTurn();
+                            }
+                        }, 1000); // Give a bit more time for "enforcado" message
                     } else {
                         switchTurn();
                     }
-                }, 1000); // Give a bit more time for "enforcado" message
-            } else {
-                switchTurn();
-            }
-        }, 500); // Increased timeout to 500ms to make the message visible before turn switch.
-    };
+                }, 500); // Increased timeout to 500ms to make the message visible before turn switch.
+            };
 
-    // Handle "I know the answer" full guess
-    const handleFullGuess = (e) => {
-        e.preventDefault();
-        const guessedBook = fullGuessInputRefs[0].current.value;
-        const guessedName = fullGuessInputRefs[1].current.value;
-        const guessedPlace = fullGuessInputRefs[2].current.value;
+            // Handle "I know the answer" full guess
+            const handleFullGuess = (e) => {
+                e.preventDefault();
+                const guessedBook = fullGuessInputRefs[0].current.value;
+                const guessedName = fullGuessInputRefs[1].current.value;
+                const guessedPlace = fullGuessInputRefs[2].current.value;
 
-        fullGuessInputRefs.forEach(ref => {
-            if (ref.current) ref.current.value = ''; // Clear input
-        });
+                fullGuessInputRefs.forEach(ref => {
+                    if (ref.current) ref.current.value = ''; // Clear input
+                });
 
-        const normalizedGuessedBook = normalizeString(guessedBook);
-        const normalizedGuessedName = normalizeString(guessedName);
-        const normalizedGuessedPlace = normalizeString(guessedPlace);
+                const normalizedGuessedBook = normalizeString(guessedBook);
+                const normalizedGuessedName = normalizeString(guessedName);
+                const normalizedGuessedPlace = normalizeString(guessedPlace);
 
-        const correctBook = normalizeString(currentWords.book);
-        const correctName = normalizeString(currentWords.name);
-        const correctPlace = normalizeString(currentWords.place);
+                const correctBook = normalizeString(currentWords.book);
+                const correctName = normalizeString(currentWords.name);
+                const correctPlace = normalizeString(currentWords.place);
 
-        let outcomeMessage = '';
-        let newGameStatus = 'playing';
+                let outcomeMessage = '';
+                let newGameStatus = 'playing';
 
-        if (normalizedGuessedBook === correctBook && normalizedGuessedName === correctName && normalizedGuessedPlace === correctPlace) {
-            // Reveal all letters for the current team if correct
-            revealAllWordsForTeam(currentTeamIndex);
-            outcomeMessage = `PARABÉNS! TIME ${currentTeamName} ADIVINHOU TODAS AS SUAS PALAVRAS E VENCEU O JOGO!`;
-            newGameStatus = 'won';
-            // Reveal all words for losing teams
-            for (let i = 0; i < 3; i++) {
-                if (i !== currentTeamIndex) { // If not the winning team
-                    revealAllWordsForTeam(i);
-                }
-            }
-        } else {
-            // Immediately lose if any guess is incorrect
-            setIncorrectGuesses(prev => {
-                const newState = [...prev];
-                newState[currentTeamIndex] = 7;
-                return newState;
-            });
-            outcomeMessage = `RESPOSTA INCORRETA! TIME ${currentTeamName} FOI ENFORCADO IMEDIATAMENTE! AS PALAVRAS ERAM: LIVRO: "${currentWords.book.toUpperCase()}", NOME: "${currentWords.name.toUpperCase()}", LUGAR: "${currentWords.place.toUpperCase()}".`;
-            newGameStatus = 'lost';
-            // Reveal words for this team since they lost
-            revealAllWordsForTeam(currentTeamIndex);
-
-            setTimeout(() => {
-                const activeTeamsLeft = [0, 1, 2].filter(id =>
-                    !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
-                );
-                if (activeTeamsLeft.length === 0) {
-                    setGameStatus('ended');
-                    setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
-                    // Reveal all words for any remaining losing teams if game ended this way
+                if (normalizedGuessedBook === correctBook && normalizedGuessedName === correctName && normalizedGuessedPlace === correctPlace) {
+                    // Reveal all letters for the current team if correct
+                    revealAllWordsForTeam(currentTeamIndex);
+                    outcomeMessage = `PARABÉNS! TIME ${currentTeamName} ADIVINHOU TODAS AS SUAS PALAVRAS E VENCEU O JOGO!`;
+                    newGameStatus = 'won';
+                    // Reveal all words for losing teams
                     for (let i = 0; i < 3; i++) {
-                        if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
+                        if (i !== currentTeamIndex) { // If not the winning team
                             revealAllWordsForTeam(i);
                         }
                     }
                 } else {
-                    switchTurn();
-                }
-            }, 1000); // Give a bit more time for "enforcado" message
-        }
+                    // Immediately lose if any guess is incorrect
+                    setIncorrectGuesses(prev => {
+                        const newState = [...prev];
+                        newState[currentTeamIndex] = 7;
+                        return newState;
+                    });
+                    outcomeMessage = `RESPOSTA INCORRETA! TIME ${currentTeamName} FOI ENFORCADO IMEDIATAMENTE! AS PALAVRAS ERAM: LIVRO: "${currentWords.book.toUpperCase()}", NOME: "${currentWords.name.toUpperCase()}", LUGAR: "${currentWords.place.toUpperCase()}".`;
+                    newGameStatus = 'lost';
+                    // Reveal words for this team since they lost
+                    setImmediate(() => revealAllWordsForTeam(currentTeamIndex)); // Use setImmediate to ensure state update before reveal
 
-        setMessage(outcomeMessage); // Set message immediately
 
-        // Defer game status and turn switch if not already handled by a win/loss
-        if (newGameStatus === 'playing') {
-             setTimeout(() => {
-                switchTurn();
-             }, 500);
-        }
-    };
-
-    // Switch to the next team's turn
-    const switchTurn = () => {
-        if (gameStatus !== 'playing') return;
-
-        let nextTeam = (currentTeamIndex + 1) % 3;
-        let originalStartingNextTeam = nextTeam; // To detect if we've looped through everyone
-
-        // Skip teams that have already won or lost (hanged)
-        while ((checkWinWithSpecificGuessedLetters(teamWords[nextTeam], guessedLetters[nextTeam]) || incorrectGuesses[nextTeam] >= 7)) {
-            nextTeam = (nextTeam + 1) % 3;
-            // If we've circled back to the original starting point and still haven't found an active team
-            if (nextTeam === originalStartingNextTeam) {
-                // This means no active teams are left, or only the current team is active and has been checked
-                const activeTeams = [0, 1, 2].filter(id =>
-                    !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
-                );
-                if (activeTeams.length === 0) {
-                    setGameStatus('ended'); // All teams done, no winner or everyone lost
-                    setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
-                    // Reveal all words for any remaining losing teams
-                    for (let i = 0; i < 3; i++) {
-                        if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
-                            revealAllWordsForTeam(i);
+                    setTimeout(() => {
+                        const activeTeamsLeft = [0, 1, 2].filter(id =>
+                            !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
+                        );
+                        if (activeTeamsLeft.length === 0) {
+                            setGameStatus('ended');
+                            setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
+                            // Reveal all words for any remaining losing teams if game ended this way
+                            for (let i = 0; i < 3; i++) {
+                                if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
+                                    revealAllWordsForTeam(i);
+                                }
+                            }
+                        } else {
+                            switchTurn();
                         }
-                    }
-                    return;
-                } else if (activeTeams.length === 1 && activeTeams[0] === currentTeamIndex) {
-                    // Only current team is active, they continue playing (no switch needed)
-                    setMessage(`TIME ${currentTeamName}, SUA VEZ!`);
-                    return;
+                    }, 1000); // Give a bit more time for "enforcado" message
                 }
-                // If we're here, it implies there's another active team but the loop logic might have
-                // prematurely ended. This case needs careful handling or redesign of loop condition.
-                // For now, let's break and fall through to default switch if issues arises.
-                break;
-            }
-        }
-        setCurrentTeamIndex(nextTeam);
-        setMessage(`TIME ${["ESQUERDO", "MEIO", "DIREITO"][nextTeam]}, SUA VEZ!`);
-    };
+
+                setMessage(outcomeMessage); // Set message immediately
+
+                // Defer game status and turn switch if not already handled by a win/loss
+                if (newGameStatus === 'playing') {
+                     setTimeout(() => {
+                        switchTurn();
+                     }, 500);
+                }
+            };
+
+            // Switch to the next team's turn
+            const switchTurn = () => {
+                if (gameStatus !== 'playing') return;
+
+                let nextTeam = (currentTeamIndex + 1) % 3;
+                let originalStartingNextTeam = nextTeam; // To detect if we've looped through everyone
+
+                // Skip teams that have already won or lost (hanged)
+                while ((checkWinWithSpecificGuessedLetters(teamWords[nextTeam], guessedLetters[nextTeam]) || incorrectGuesses[nextTeam] >= 7)) {
+                    nextTeam = (nextTeam + 1) % 3;
+                    // If we've circled back to the original starting point and still haven't found an active team
+                    if (nextTeam === originalStartingNextTeam) {
+                        // This means no active teams are left, or only the current team is active and has been checked
+                        const activeTeams = [0, 1, 2].filter(id =>
+                            !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
+                        );
+                        if (activeTeams.length === 0) {
+                            setGameStatus('ended'); // All teams done, no winner or everyone lost
+                            setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
+                            // Reveal all words for any remaining losing teams
+                            for (let i = 0; i < 3; i++) {
+                                if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
+                                    revealAllWordsForTeam(i);
+                                }
+                            }
+                            return;
+                        } else if (activeTeams.length === 1 && activeTeams[0] === currentTeamIndex) {
+                            // Only current team is active, they continue playing (no switch needed)
+                            setMessage(`TIME ${currentTeamName}, SUA VEZ!`);
+                            return;
+                        }
+                        // If we're here, it implies there's another active team but the loop logic might have
+                        // prematurely ended. This case needs careful handling or redesign of loop condition.
+                        // For now, let's break and fall through to default switch if issues arises.
+                        break;
+                    }
+                }
+                setCurrentTeamIndex(nextTeam);
+                setMessage(`TIME ${["ESQUERDO", "MEIO", "DIREITO"][nextTeam]}, SUA VEZ!`);
+            };
 
 
-    // Hangman SVG drawing based on incorrect guesses
-    const HangmanSVG = ({ incorrectCount }) => {
-        const parts = [
-            // Head
-            <circle key="head" cx="100" cy="50" r="20" stroke="currentColor" strokeWidth="2" fill="none" />,
-            // Body
-            <line key="body" x1="100" y1="70" x2="100" y2="120" stroke="currentColor" strokeWidth="2" />,
-            // Left Arm
-            <line key="left-arm" x1="100" y1="80" x2="70" y2="100" stroke="currentColor" strokeWidth="2" />,
-            // Right Arm
-            <line key="right-arm" x1="100" y1="80" x2="130" y2="100" stroke="currentColor" strokeWidth="2" />,
-            // Left Leg
-            <line key="left-leg" x1="100" y1="120" x2="80" y2="150" stroke="currentColor" strokeWidth="2" />,
-            // Right Leg
-            <line key="right-leg" x1="100" y1="120" x2="120" y2="150" stroke="currentColor" strokeWidth="2" />,
-            // Hair/Face Detail (final stage)
-            <path key="face-detail" d="M90 60 Q100 65 110 60 M95 55 A1 1 0 0 1 105 55" stroke="currentColor" strokeWidth="1" fill="none" />
-        ];
+            // Hangman SVG drawing based on incorrect guesses
+            const HangmanSVG = ({ incorrectCount }) => {
+                const parts = [
+                    // Head
+                    <circle key="head" cx="100" cy="50" r="20" stroke="currentColor" strokeWidth="2" fill="none" />,
+                    // Body
+                    <line key="body" x1="100" y1="70" x2="100" y2="120" stroke="currentColor" strokeWidth="2" />,
+                    // Left Arm
+                    <line key="left-arm" x1="100" y1="80" x2="70" y2="100" stroke="currentColor" strokeWidth="2" />,
+                    // Right Arm
+                    <line key="right-arm" x1="100" y1="80" x2="130" y2="100" stroke="currentColor" strokeWidth="2" />,
+                    // Left Leg
+                    <line key="left-leg" x1="100" y1="120" x2="80" y2="150" stroke="currentColor" strokeWidth="2" />,
+                    // Right Leg
+                    <line key="right-leg" x1="100" y1="120" x2="120" y2="150" stroke="currentColor" strokeWidth="2" />,
+                    // Hair/Face Detail (final stage)
+                    <path key="face-detail" d="M90 60 Q100 65 110 60 M95 55 A1 1 0 0 1 105 55" stroke="currentColor" strokeWidth="1" fill="none" />
+                ];
 
-        return (
-            <svg className="w-24 h-40" viewBox="0 0 200 200">
-                {/* Gallow */}
-                <line x1="10" y1="190" x2="100" y2="190" stroke="currentColor" strokeWidth="4" />
-                <line x1="55" y1="190" x2="55" y2="10" stroke="currentColor" strokeWidth="4" />
-                <line x1="55" y1="10" x2="100" y2="10" stroke="currentColor" strokeWidth="4" />
-                <line x1="100" y1="10" x2="100" y2="30" stroke="currentColor" strokeWidth="2" />
-                {/* Drawn parts based on incorrectCount */}
-                {parts.slice(0, incorrectCount)}
-            </svg>
-        );
-    };
+                return (
+                    <svg className="w-24 h-40" viewBox="0 0 200 200">
+                        {/* Gallow */}
+                        <line x1="10" y1="190" x2="100" y2="190" stroke="currentColor" strokeWidth="4" />
+                        <line x1="55" y1="190" x2="55" y2="10" stroke="currentColor" strokeWidth="4" />
+                        <line x1="55" y1="10" x2="100" y2="10" stroke="currentColor" strokeWidth="4" />
+                        <line x1="100" y1="10" x2="100" y2="30" stroke="currentColor" strokeWidth="2" />
+                        {/* Drawn parts based on incorrectCount */}
+                        {parts.slice(0, incorrectCount)}
+                    </svg>
+                );
+            };
 
-    return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-100 to-indigo-200 p-4 font-inter text-gray-800 flex flex-col items-center justify-center">
-            <header className="text-center mb-8">
-                <p className="text-xl text-indigo-600 mt-2 font-semibold italic">JOGO DESENVOLVIDO PELO DR. MARCELO BRENDON</p>
-                <h1 className="text-5xl font-extrabold text-indigo-700 drop-shadow-lg rounded-xl p-2 uppercase">FORCA BÍBLICA</h1>
-                <p className="text-xl text-indigo-600 mt-2 font-semibold uppercase">LIVRO, NOME E LUGAR</p>
-            </header>
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-100 to-indigo-200 p-4 font-inter text-gray-800 flex flex-col items-center justify-center">
+                    <header className="text-center mb-8">
+                        <p className="text-xl text-indigo-600 mt-2 font-semibold italic">JOGO DESENVOLVIDO PELO DR. MARCELO BRENDON</p>
+                        <h1 className="text-5xl font-extrabold text-indigo-700 drop-shadow-lg rounded-xl p-2 uppercase">FORCA BÍBLICA</h1>
+                        <p className="text-xl text-indigo-600 mt-2 font-semibold uppercase">LIVRO, NOME E LUGAR</p>
+                    </header>
 
-            {/* Game Status Message */}
-            {message && (
-                <div className={`mb-6 p-4 rounded-xl shadow-lg text-center font-bold text-lg ${
-                    gameStatus === 'won' ? 'bg-green-500 text-white' :
-                    gameStatus === 'lost' ? 'bg-red-500 text-white' :
-                    gameStatus === 'ended' ? 'bg-orange-500 text-white' :
-                    'bg-white text-indigo-700'
-                }`}>
-                    {message}
-                </div>
-            )}
-
-            {/* Team Display Area */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
-                {/* Map over teams to display their respective states */}
-                {[0, 1, 2].map((teamId) => {
-                    const teamSpecificWords = teamWords[teamId] || {}; // Ensure it's an object
-                    const teamSpecificGuessedLetters = guessedLetters[teamId] || []; // Ensure it's an array
-                    const teamSpecificIncorrectGuesses = incorrectGuesses[teamId] || 0; // Ensure it's a number
-
-                    return (
-                        <div
-                            key={teamId}
-                            className={`p-6 rounded-3xl shadow-xl border-4 transition-all duration-300
-                                ${currentTeamIndex === teamId ? 'border-indigo-600 bg-white scale-105' : 'border-gray-300 bg-gray-50 opacity-70'}
-                                ${checkWinWithSpecificGuessedLetters(teamSpecificWords, teamSpecificGuessedLetters) ? 'bg-green-100 border-green-500' : ''}
-                                ${teamSpecificIncorrectGuesses >= 7 ? 'bg-red-100 border-red-500' : ''}
-                            `}
-                        >
-                            <h2 className={`text-2xl font-bold mb-4 text-center ${currentTeamIndex === teamId ? 'text-indigo-700' : 'text-gray-600'} uppercase`}>
-                                TIME {["ESQUERDO", "MEIO", "DIREITO"][teamId]}
-                                {checkWinWithSpecificGuessedLetters(teamSpecificWords, teamSpecificGuessedLetters) && <span className="text-green-600 ml-2"> (VENCEU!)</span>}
-                                {teamSpecificIncorrectGuesses >= 7 && <span className="text-red-600 ml-2"> (ENFORCADO!)</span>}
-                            </h2>
-
-                            {/* Hangman drawing for each team */}
-                            <div className="flex justify-center mb-6">
-                                <HangmanSVG incorrectCount={teamSpecificIncorrectGuesses} />
-                            </div>
-
-                            <div className="mb-6 text-center text-lg font-mono">
-                                {/* Display masked words as individual cells */}
-                                <p className="mb-2">LIVRO: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.book, teamSpecificGuessedLetters).map((char, idx) => (
-                                    <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
-                                        {char}
-                                    </span>
-                                ))}</span></p>
-                                <p className="mb-2">NOME: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.name, teamSpecificGuessedLetters).map((char, idx) => (
-                                    <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
-                                        {char}
-                                    </span>
-                                ))}</span></p>
-                                <p>LUGAR: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.place, teamSpecificGuessedLetters).map((char, idx) => (
-                                    <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
-                                        {char}
-                                    </span>
-                                ))}</span></p>
-                            </div>
-
-                            <div className="text-center text-sm text-gray-600 mb-4 uppercase">
-                                LETRAS JÁ TENTADAS: <span className="font-semibold text-gray-800">{ (teamSpecificGuessedLetters).map(l => l.toUpperCase()).join(', ') }</span>
-                            </div>
+                    {/* Game Status Message */}
+                    {message && (
+                        <div className={`mb-6 p-4 rounded-xl shadow-lg text-center font-bold text-lg ${
+                            gameStatus === 'won' ? 'bg-green-500 text-white' :
+                            gameStatus === 'lost' ? 'bg-red-500 text-white' :
+                            gameStatus === 'ended' ? 'bg-orange-500 text-white' :
+                            'bg-white text-indigo-700'
+                        }`}>
+                            {message}
                         </div>
-                    );
-                })}
-            </div>
+                    )}
 
-            {/* Current Team's Input Area */}
-            {gameStatus === 'playing' && (
-                <div className="mt-8 p-6 bg-white rounded-3xl shadow-2xl border-4 border-indigo-600 w-full max-w-lg">
-                    <h3 className="text-3xl font-bold text-center text-indigo-700 mb-6 uppercase">
-                        VEZ DO TIME {currentTeamName}
-                    </h3>
+                    {/* Team Display Area */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
+                        {/* Map over teams to display their respective states */}
+                        {[0, 1, 2].map((teamId) => {
+                            const teamSpecificWords = teamWords[teamId] || {}; // Ensure it's an object
+                            const teamSpecificGuessedLetters = guessedLetters[teamId] || []; // Ensure it's an array
+                            const teamSpecificIncorrectGuesses = incorrectGuesses[teamId] || 0; // Ensure it's a number
 
-                    {/* Guess Letter Form */}
-                    <form onSubmit={handleLetterGuess} className="flex flex-col items-center mb-6">
-                        <label htmlFor="letter-guess" className="text-lg font-medium text-gray-700 mb-4 uppercase">ADIVINHE UMA LETRA:</label>
-                        <div className="w-32 h-32 bg-blue-600 rounded-full flex items-center justify-center shadow-xl border-4 border-blue-400 mb-6">
-                            <input
-                                type="text"
-                                id="letter-guess"
-                                ref={letterInputRef}
-                                maxLength="1"
-                                className="w-20 h-20 text-center text-5xl font-bold uppercase text-white bg-transparent outline-none border-none placeholder-blue-300"
-                                disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
-                                placeholder="A" // Placeholder to suggest letter input
-                            />
+                            return (
+                                <div
+                                    key={teamId}
+                                    className={`p-6 rounded-3xl shadow-xl border-4 transition-all duration-300
+                                        ${currentTeamIndex === teamId ? 'border-indigo-600 bg-white scale-105' : 'border-gray-300 bg-gray-50 opacity-70'}
+                                        ${checkWinWithSpecificGuessedLetters(teamSpecificWords, teamSpecificGuessedLetters) ? 'bg-green-100 border-green-500' : ''}
+                                        ${teamSpecificIncorrectGuesses >= 7 ? 'bg-red-100 border-red-500' : ''}
+                                    `}
+                                >
+                                    <h2 className={`text-2xl font-bold mb-4 text-center ${currentTeamIndex === teamId ? 'text-indigo-700' : 'text-gray-600'} uppercase`}>
+                                        TIME {["ESQUERDO", "MEIO", "DIREITO"][teamId]}
+                                        {checkWinWithSpecificGuessedLetters(teamSpecificWords, teamSpecificGuessedLetters) && <span className="text-green-600 ml-2"> (VENCEU!)</span>}
+                                        {teamSpecificIncorrectGuesses >= 7 && <span className="text-red-600 ml-2"> (ENFORCADO!)</span>}
+                                    </h2>
+
+                                    {/* Hangman drawing for each team */}
+                                    <div className="flex justify-center mb-6">
+                                        <HangmanSVG incorrectCount={teamSpecificIncorrectGuesses} />
+                                    </div>
+
+                                    <div className="mb-6 text-center text-lg font-mono">
+                                        {/* Display masked words as individual cells */}
+                                        <p className="mb-2">LIVRO: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.book, teamSpecificGuessedLetters).map((char, idx) => (
+                                            <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
+                                                {char}
+                                            </span>
+                                        ))}</span></p>
+                                        <p className="mb-2">NOME: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.name, teamSpecificGuessedLetters).map((char, idx) => (
+                                            <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
+                                                {char}
+                                            </span>
+                                        ))}</span></p>
+                                        <p>LUGAR: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.place, teamSpecificGuessedLetters).map((char, idx) => (
+                                            <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
+                                                {char}
+                                            </span>
+                                        ))}</span></p>
+                                    </div>
+
+                                    <div className="text-center text-sm text-gray-600 mb-4 uppercase">
+                                        LETRAS JÁ TENTADAS: <span className="font-semibold text-gray-800">{ (teamSpecificGuessedLetters).map(l => l.toUpperCase()).join(', ') }</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Current Team's Input Area */}
+                    {gameStatus === 'playing' && (
+                        <div className="mt-8 p-6 bg-white rounded-3xl shadow-2xl border-4 border-indigo-600 w-full max-w-lg">
+                            <h3 className="text-3xl font-bold text-center text-indigo-700 mb-6 uppercase">
+                                VEZ DO TIME {currentTeamName}
+                            </h3>
+
+                            {/* Guess Letter Form */}
+                            <form onSubmit={handleLetterGuess} className="flex flex-col items-center mb-6">
+                                <label htmlFor="letter-guess" className="text-lg font-medium text-gray-700 mb-4 uppercase">ADIVINHE UMA LETRA:</label>
+                                <div className="w-32 h-32 bg-blue-600 rounded-full flex items-center justify-center shadow-xl border-4 border-blue-400 mb-6">
+                                    <input
+                                        type="text"
+                                        id="letter-guess"
+                                        ref={letterInputRef}
+                                        maxLength="1"
+                                        className="w-20 h-20 text-center text-5xl font-bold uppercase text-white bg-transparent outline-none border-none placeholder-blue-300"
+                                        disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
+                                        placeholder="A" // Placeholder to suggest letter input
+                                    />
+                                </div>
+                                <button
+                                    type="submit"
+                                    className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
+                                >
+                                    TENTAR LETRA
+                                </button>
+                            </form>
+
+                            {/* Full Guess Form */}
+                            <hr className="my-6 border-indigo-200" />
+                            <form onSubmit={handleFullGuess} className="flex flex-col items-center">
+                                <label className="text-lg font-medium text-gray-700 mb-4 text-center uppercase">OU, JÁ SABE A RESPOSTA?</label>
+                                <input
+                                    type="text"
+                                    placeholder="LIVRO BÍBLICO"
+                                    ref={fullGuessInputRefs[0]}
+                                    className="w-full p-3 mb-3 text-center border-2 border-indigo-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200 uppercase"
+                                    disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="NOME BÍBLICO"
+                                    ref={fullGuessInputRefs[1]}
+                                    className="w-full p-3 mb-3 text-center border-2 border-indigo-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200 uppercase"
+                                    disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="LUGAR BÍBLICO"
+                                    ref={fullGuessInputRefs[2]}
+                                    className="w-full p-3 mb-4 text-center border-2 border-indigo-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200 uppercase"
+                                    disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
+                                />
+                                <button
+                                    type="submit"
+                                    className="bg-gradient-to-r from-green-500 to-teal-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
+                                >
+                                    JÁ SEI A RESPOSTA!
+                                </button>
+                            </form>
                         </div>
-                        <button
-                            type="submit"
-                            className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
-                        >
-                            TENTAR LETRA
-                        </button>
-                    </form>
+                    )}
 
-                    {/* Full Guess Form */}
-                    <hr className="my-6 border-indigo-200" />
-                    <form onSubmit={handleFullGuess} className="flex flex-col items-center">
-                        <label className="text-lg font-medium text-gray-700 mb-4 text-center uppercase">OU, JÁ SABE A RESPOSTA?</label>
-                        <input
-                            type="text"
-                            placeholder="LIVRO BÍBLICO"
-                            ref={fullGuessInputRefs[0]}
-                            className="w-full p-3 mb-3 text-center border-2 border-indigo-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200 uppercase"
-                            disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
-                        />
-                        <input
-                            type="text"
-                            placeholder="NOME BÍBLICO"
-                            ref={fullGuessInputRefs[1]}
-                            className="w-full p-3 mb-3 text-center border-2 border-indigo-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200 uppercase"
-                            disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
-                        />
-                        <input
-                            type="text"
-                            placeholder="LUGAR BÍBLICO"
-                            ref={fullGuessInputRefs[2]}
-                            className="w-full p-3 mb-4 text-center border-2 border-indigo-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-200 uppercase"
-                            disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
-                        />
+                    {/* Restart Button */}
+                    {(gameStatus === 'won' || gameStatus === 'lost' || gameStatus === 'ended') && (
                         <button
-                            type="submit"
-                            className="bg-gradient-to-r from-green-500 to-teal-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={gameStatus !== 'playing' || checkWinWithSpecificGuessedLetters(currentWords, currentGuessedLetters) || currentIncorrectGuesses >= 7}
+                            onClick={initializeGame}
+                            className="mt-8 bg-gradient-to-r from-yellow-500 to-orange-600 text-white font-bold py-4 px-10 rounded-xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition duration-300 text-xl uppercase"
                         >
-                            JÁ SEI A RESPOSTA!
+                            JOGAR NOVAMENTE
                         </button>
-                    </form>
+                    )}
+
+                    {/* New "Zerar Tudo" Button */}
+                    <button
+                        onClick={initializeGame} // A função initializeGame já reseta todo o estado para o início.
+                        className="mt-4 bg-red-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 text-lg uppercase"
+                    >
+                        ZERAR TUDO E REINICIAR
+                    </button>
                 </div>
-            )}
+            );
+        };
 
-            {/* Restart Button */}
-            {(gameStatus === 'won' || gameStatus === 'lost' || gameStatus === 'ended') && (
-                <button
-                    onClick={initializeGame}
-                    className="mt-8 bg-gradient-to-r from-yellow-500 to-orange-600 text-white font-bold py-4 px-10 rounded-xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition duration-300 text-xl uppercase"
-                >
-                    JOGAR NOVAMENTE
-                </button>
-            )}
-
-            {/* New "Zerar Tudo" Button */}
-            <button
-                onClick={initializeGame} // A função initializeGame já reseta todo o estado para o início.
-                className="mt-4 bg-red-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 text-lg uppercase"
-            >
-                ZERAR TUDO E REINICIAR
-            </button>
-        </div>
-    );
-};
-
-export default App;
+        // Render the App component into the root div
+        const domNode = document.getElementById('root');
+        const root = ReactDOM.createRoot(domNode);
+        root.render(<App />);
+    </script>
+</body>
+</html>
