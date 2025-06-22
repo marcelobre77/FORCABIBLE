@@ -25,11 +25,12 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // Import React hooks directly using standard ES6 import syntax
+        // Babel will transpile this for the browser environment.
+        const { useState, useEffect, useRef } = React;
+
         // Main App component for the Biblical Hangman game
         const App = () => {
-            // Import React hooks directly from React global object
-            const { useState, useEffect, useRef } = React;
-
             // State to store words for each team - Initialized as an array of objects
             const [teamWords, setTeamWords] = useState([{}, {}, {}]);
             // State to store guessed letters for each team - Initialized as an array of arrays
@@ -38,14 +39,16 @@
             const [incorrectGuesses, setIncorrectGuesses] = useState([0, 0, 0]);
             // State for the current active team (0: Left, 1: Middle, 2: Right)
             const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
-            // State for game status (playing, won, lost, ended)
-            const [gameStatus, setGameStatus] = useState('playing');
+            // State for game status (selecting, playing, won, lost, ended)
+            const [gameStatus, setGameStatus] = useState('selecting'); // Start in selection mode
             // State for the message displayed to the user
             const [message, setMessage] = useState('');
             // Ref for the letter input field
             const letterInputRef = useRef(null);
             // Refs for the full guess input fields
             const fullGuessInputRefs = [useRef(null), useRef(null), useRef(null)];
+            // New state for number of active players
+            const [numPlayers, setNumPlayers] = useState(0);
 
             // Word lists for each category
             const wordCategories = {
@@ -78,11 +81,6 @@
                 return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
             };
 
-            // Initialize game on component mount
-            useEffect(() => {
-                initializeGame();
-            }, []);
-
             // Effect to focus on the letter input when the turn changes
             useEffect(() => {
                 if (letterInputRef.current && gameStatus === 'playing') {
@@ -106,18 +104,18 @@
                 return selected;
             };
 
-            // Game initialization logic
-            const initializeGame = () => {
-                const newTeamWords = [];
-                const newGuessedLetters = [];
-                const newIncorrectGuesses = [];
+            // Game initialization logic, now takes number of players
+            const initializeGame = (playersCount = 3) => { // Default to 3 players if not specified
+                setNumPlayers(playersCount);
+
+                const newTeamWords = Array(playersCount).fill({}).map(() => ({}));
+                const newGuessedLetters = Array(playersCount).fill([]).map(() => []);
+                const newIncorrectGuesses = Array(playersCount).fill(0);
                 const allUsedWords = [];
 
-                // Assign words and initial states for each of the 3 teams
-                for (let i = 0; i < 3; i++) {
-                    newTeamWords[i] = selectUniqueWords(allUsedWords); // Ensure words are unique across teams if possible
-                    newGuessedLetters[i] = [];
-                    newIncorrectGuesses[i] = 0;
+                // Assign words and initial states for each of the `playersCount` teams
+                for (let i = 0; i < playersCount; i++) {
+                    newTeamWords[i] = selectUniqueWords(allUsedWords);
                 }
 
                 setTeamWords(newTeamWords);
@@ -125,7 +123,7 @@
                 setIncorrectGuesses(newIncorrectGuesses);
                 setCurrentTeamIndex(0); // Start with the first team
                 setGameStatus('playing');
-                setMessage('VAMOS COMEÇAR! TIME ESQUERDO, SUA VEZ!');
+                setMessage(`VAMOS COMEÇAR! TIME ${["ESQUERDO", "MEIO", "DIREITO"][0]}, SUA VEZ!`);
 
                 // Clear input fields
                 if (letterInputRef.current) letterInputRef.current.value = '';
@@ -229,51 +227,53 @@
                     return newState;
                 });
 
-                // Set initial message. This message reflects the immediate outcome.
-                if (letterFound) {
-                    setMessage(`"${inputLetter.toUpperCase()}" ESTÁ CORRETO!`);
-                } else {
-                    setMessage(`"${inputLetter.toUpperCase()}" ESTÁ INCORRETO. VOCÊ TEM ${7 - newIncorrectCountForCurrentTeam} CHANCES RESTANTES.`);
+                // Determine next game state and message based on the *immediate* outcome
+                let finalMessage = '';
+                let nextGameStatus = 'playing';
+
+                if (newIncorrectCountForCurrentTeam >= 7) { // Prioritize loss
+                    finalMessage = `TIME ${currentTeamName} PERDEU! AS PALAVRAS ERAM: LIVRO: "${currentWords.book.toUpperCase()}", NOME: "${currentWords.name.toUpperCase()}", LUGAR: "${currentWords.place.toUpperCase()}".`;
+                    nextGameStatus = 'lost';
+                    revealAllWordsForTeam(currentTeamIndex); // Reveal words for this losing team
+                } else if (checkWinWithSpecificGuessedLetters(currentWords, newGuessedLettersForCurrentTeam)) { // Check win if not lost
+                    finalMessage = `PARABÉNS! TIME ${currentTeamName} ADIVINHOU TODAS AS SUAS PALAVRAS E VENCEU O JOGO!`;
+                    nextGameStatus = 'won';
+                } else { // Game continues
+                    finalMessage = `"${inputLetter.toUpperCase()}" ${letterFound ? 'ESTÁ CORRETO!' : 'ESTÁ INCORRETO. VOCÊ TEM ' + (7 - newIncorrectCountForCurrentTeam) + ' CHANCES RESTANTES.'}`;
                 }
 
-                // Defer final game logic (win/lose/switch turn) to allow UI update.
+                setMessage(finalMessage); // Set message immediately
+
+                // Defer game status update and turn switch to allow message to be seen
                 setTimeout(() => {
-                    if (checkWinWithSpecificGuessedLetters(currentWords, newGuessedLettersForCurrentTeam)) {
-                        setMessage(`PARABÉNS! TIME ${currentTeamName} ADIVINHOU TODAS AS SUAS PALAVRAS E VENCEU O JOGO!`);
-                        setGameStatus('won');
-                        // Reveal all words for losing teams
-                        for (let i = 0; i < 3; i++) {
-                            if (i !== currentTeamIndex) { // If not the winning team
-                                revealAllWordsForTeam(i);
-                            }
+                    if (nextGameStatus !== 'playing') {
+                        setGameStatus(nextGameStatus);
+                        // If game ends due to win or loss, check if overall game is over
+                        if (nextGameStatus === 'won') {
+                             for (let i = 0; i < numPlayers; i++) {
+                                 if (i !== currentTeamIndex) { // If not the winning team
+                                     revealAllWordsForTeam(i);
+                                 }
+                             }
                         }
-                    } else if (newIncorrectCountForCurrentTeam >= 7) {
-                        setMessage(`TIME ${currentTeamName} FOI ENFORCADO! AS PALAVRAS ERAM: LIVRO: "${currentWords.book.toUpperCase()}", NOME: "${currentWords.name.toUpperCase()}", LUGAR: "${currentWords.place.toUpperCase()}".`);
-                        setGameStatus('lost');
-                        // Reveal words for this team since they lost
-                        revealAllWordsForTeam(currentTeamIndex);
-                        // After current team loses, check if game should end or switch to another active team
-                        setTimeout(() => {
-                            const activeTeamsLeft = [0, 1, 2].filter(id =>
-                                !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
-                            );
-                            if (activeTeamsLeft.length === 0) {
-                                setGameStatus('ended');
-                                setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
-                                // Reveal all words for any remaining losing teams if game ended this way
-                                for (let i = 0; i < 3; i++) {
-                                    if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
-                                        revealAllWordsForTeam(i);
-                                    }
+                        const activeTeamsLeft = Array.from({ length: numPlayers }, (_, i) => i).filter(id =>
+                            !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
+                        );
+                        if (activeTeamsLeft.length === 0) {
+                            setGameStatus('ended');
+                            setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS PERDERAM.');
+                            for (let i = 0; i < numPlayers; i++) {
+                                if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
+                                    revealAllWordsForTeam(i);
                                 }
-                            } else {
-                                switchTurn();
                             }
-                        }, 1000); // Give a bit more time for "enforcado" message
+                        } else if (nextGameStatus === 'lost') { // If it was a loss, and there are still active teams, switch turn
+                            switchTurn();
+                        }
                     } else {
-                        switchTurn();
+                        switchTurn(); // If game is still playing, switch turn
                     }
-                }, 500); // Increased timeout to 500ms to make the message visible before turn switch.
+                }, nextGameStatus === 'playing' ? 500 : 1000); // Shorter delay for regular turns, longer for win/loss
             };
 
             // Handle "I know the answer" full guess
@@ -303,88 +303,78 @@
                     revealAllWordsForTeam(currentTeamIndex);
                     outcomeMessage = `PARABÉNS! TIME ${currentTeamName} ADIVINHOU TODAS AS SUAS PALAVRAS E VENCEU O JOGO!`;
                     newGameStatus = 'won';
-                    // Reveal all words for losing teams
-                    for (let i = 0; i < 3; i++) {
-                        if (i !== currentTeamIndex) { // If not the winning team
-                            revealAllWordsForTeam(i);
-                        }
-                    }
-                } else {
-                    // Immediately lose if any guess is incorrect
+                } else { // Immediately lose if any guess is incorrect
                     setIncorrectGuesses(prev => {
                         const newState = [...prev];
-                        newState[currentTeamIndex] = 7;
+                        newState[currentTeamIndex] = 7; // Set incorrect guesses to max
                         return newState;
                     });
-                    outcomeMessage = `RESPOSTA INCORRETA! TIME ${currentTeamName} FOI ENFORCADO IMEDIATAMENTE! AS PALAVRAS ERAM: LIVRO: "${currentWords.book.toUpperCase()}", NOME: "${currentWords.name.toUpperCase()}", LUGAR: "${currentWords.place.toUpperCase()}".`;
+                    outcomeMessage = `RESPOSTA INCORRETA! TIME ${currentTeamName} PERDEU IMEDIATAMENTE! AS PALAVRAS ERAM: LIVRO: "${currentWords.book.toUpperCase()}", NOME: "${currentWords.name.toUpperCase()}", LUGAR: "${currentWords.place.toUpperCase()}".`;
                     newGameStatus = 'lost';
-                    // Reveal words for this team since they lost
-                    setImmediate(() => revealAllWordsForTeam(currentTeamIndex)); // Use setImmediate to ensure state update before reveal
-
-
-                    setTimeout(() => {
-                        const activeTeamsLeft = [0, 1, 2].filter(id =>
-                            !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
-                        );
-                        if (activeTeamsLeft.length === 0) {
-                            setGameStatus('ended');
-                            setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
-                            // Reveal all words for any remaining losing teams if game ended this way
-                            for (let i = 0; i < 3; i++) {
-                                if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
-                                    revealAllWordsForTeam(i);
-                                }
-                            }
-                        } else {
-                            switchTurn();
-                        }
-                    }, 1000); // Give a bit more time for "enforcado" message
+                    revealAllWordsForTeam(currentTeamIndex); // Reveal words for this losing team
                 }
 
                 setMessage(outcomeMessage); // Set message immediately
 
-                // Defer game status and turn switch if not already handled by a win/loss
-                if (newGameStatus === 'playing') {
-                     setTimeout(() => {
-                        switchTurn();
-                     }, 500);
-                }
+                // Defer game status update and turn switch
+                setTimeout(() => {
+                    if (newGameStatus !== 'playing') {
+                        setGameStatus(newGameStatus);
+                        // If game ends due to win or loss, check if overall game is over
+                        if (newGameStatus === 'won') {
+                             for (let i = 0; i < numPlayers; i++) {
+                                 if (i !== currentTeamIndex) { // If not the winning team
+                                     revealAllWordsForTeam(i);
+                                 }
+                             }
+                        }
+                        const activeTeamsLeft = Array.from({ length: numPlayers }, (_, i) => i).filter(id =>
+                            !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
+                        );
+                        if (activeTeamsLeft.length === 0) {
+                            setGameStatus('ended');
+                            setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS PERDERAM.');
+                            for (let i = 0; i < numPlayers; i++) {
+                                if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
+                                    revealAllWordsForTeam(i);
+                                }
+                            }
+                        } else if (newGameStatus === 'lost') { // If it was a loss, and there are still active teams, switch turn
+                            switchTurn();
+                        }
+                    } else {
+                        switchTurn(); // If game is still playing, switch turn
+                    }
+                }, 1000); // Always give a bit more time for full guess outcome
             };
 
             // Switch to the next team's turn
             const switchTurn = () => {
                 if (gameStatus !== 'playing') return;
 
-                let nextTeam = (currentTeamIndex + 1) % 3;
-                let originalStartingNextTeam = nextTeam; // To detect if we've looped through everyone
+                let nextTeam = (currentTeamIndex + 1) % numPlayers;
+                let originalStartingNextTeam = nextTeam;
 
                 // Skip teams that have already won or lost (hanged)
                 while ((checkWinWithSpecificGuessedLetters(teamWords[nextTeam], guessedLetters[nextTeam]) || incorrectGuesses[nextTeam] >= 7)) {
-                    nextTeam = (nextTeam + 1) % 3;
-                    // If we've circled back to the original starting point and still haven't found an active team
+                    nextTeam = (nextTeam + 1) % numPlayers;
                     if (nextTeam === originalStartingNextTeam) {
-                        // This means no active teams are left, or only the current team is active and has been checked
-                        const activeTeams = [0, 1, 2].filter(id =>
+                        const activeTeams = Array.from({ length: numPlayers }, (_, i) => i).filter(id =>
                             !checkWinWithSpecificGuessedLetters(teamWords[id], guessedLetters[id]) && incorrectGuesses[id] < 7
                         );
                         if (activeTeams.length === 0) {
-                            setGameStatus('ended'); // All teams done, no winner or everyone lost
-                            setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS FORAM ENFORCADOS.');
-                            // Reveal all words for any remaining losing teams
-                            for (let i = 0; i < 3; i++) {
-                                if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) { // If not won
+                            setGameStatus('ended');
+                            setMessage('FIM DE JOGO! NENHUM TIME VENCEU OU TODOS PERDERAM.');
+                            for (let i = 0; i < numPlayers; i++) {
+                                if (!checkWinWithSpecificGuessedLetters(teamWords[i], guessedLetters[i])) {
                                     revealAllWordsForTeam(i);
                                 }
                             }
                             return;
                         } else if (activeTeams.length === 1 && activeTeams[0] === currentTeamIndex) {
-                            // Only current team is active, they continue playing (no switch needed)
                             setMessage(`TIME ${currentTeamName}, SUA VEZ!`);
                             return;
                         }
-                        // If we're here, it implies there's another active team but the loop logic might have
-                        // prematurely ended. This case needs careful handling or redesign of loop condition.
-                        // For now, let's break and fall through to default switch if issues arises.
                         break;
                     }
                 }
@@ -398,18 +388,25 @@
                 const parts = [
                     // Head
                     <circle key="head" cx="100" cy="50" r="20" stroke="currentColor" strokeWidth="2" fill="none" />,
-                    // Body
-                    <line key="body" x1="100" y1="70" x2="100" y2="120" stroke="currentColor" strokeWidth="2" />,
-                    // Left Arm
-                    <line key="left-arm" x1="100" y1="80" x2="70" y2="100" stroke="currentColor" strokeWidth="2" />,
+                    // Body (a more blocky style)
+                    <rect key="body" x="95" y="70" width="10" height="50" fill="#3B82F6" stroke="currentColor" strokeWidth="2" rx="3" ry="3"/>,
+                    // Left Arm (more defined shapes)
+                    <rect key="left-arm" x="65" y="80" width="30" height="10" fill="#FCD34D" stroke="currentColor" strokeWidth="1" rx="3" ry="3"/>,
                     // Right Arm
-                    <line key="right-arm" x1="100" y1="80" x2="130" y2="100" stroke="currentColor" strokeWidth="2" />,
-                    // Left Leg
-                    <line key="left-leg" x1="100" y1="120" x2="80" y2="150" stroke="currentColor" strokeWidth="2" />,
-                    // Right Leg
-                    <line key="right-leg" x1="100" y1="120" x2="120" y2="150" stroke="currentColor" strokeWidth="2" />,
-                    // Hair/Face Detail (final stage)
-                    <path key="face-detail" d="M90 60 Q100 65 110 60 M95 55 A1 1 0 0 1 105 55" stroke="currentColor" strokeWidth="1" fill="none" />
+                    <rect key="right-arm" x="105" y="80" width="30" height="10" fill="#FCD34D" stroke="currentColor" strokeWidth="1" rx="3" ry="3"/>,
+                    // Left Leg - Adjusted y to be closer to body (was 130, now 120)
+                    <rect key="left-leg" x="85" y="120" width="10" height="30" fill="#10B981" stroke="currentColor" strokeWidth="1" rx="3" ry="3"/>,
+                    // Right Leg - Adjusted y to be closer to body (was 130, now 120)
+                    <rect key="right-leg" x="105" y="120" width="10" height="30" fill="#10B981" stroke="currentColor" strokeWidth="1" rx="3" ry="3"/>,
+                    // Hair/Face Detail (7th part - X eyes and simple mouth/hair)
+                    <g key="face-detail">
+                        <line x1="90" y1="40" x2="85" y2="45" stroke="#4B5563" strokeWidth="1" /> {/* Left eye X */}
+                        <line x1="85" y1="40" x2="90" y2="45" stroke="#4B5563" strokeWidth="1" />
+                        <line x1="110" y1="40" x2="105" y2="45" stroke="#4B5563" strokeWidth="1" /> {/* Right eye X */}
+                        <line x1="105" y1="40" x2="110" y2="45" stroke="#4B5563" strokeWidth="1" />
+                        <path d="M95 55 Q100 60 105 55" stroke="#4B5563" strokeWidth="1" fill="none" /> {/* Mouth */}
+                        <path d="M85 35 C80 30, 90 25, 95 30 S105 25, 110 30 C120 25, 115 30, 110 35" fill="brown" stroke="brown" strokeWidth="0.5" /> {/* Simple hair */}
+                    </g>
                 ];
 
                 return (
@@ -437,70 +434,117 @@
                     {message && (
                         <div className={`mb-6 p-4 rounded-xl shadow-lg text-center font-bold text-lg ${
                             gameStatus === 'won' ? 'bg-green-500 text-white' :
-                            gameStatus === 'lost' ? 'bg-red-500 text-white' :
-                            gameStatus === 'ended' ? 'bg-orange-500 text-white' :
+                            gameStatus === 'lost' || gameStatus === 'ended' ? 'bg-red-500 text-white' : // Red for lost or ended
                             'bg-white text-indigo-700'
                         }`}>
                             {message}
                         </div>
                     )}
 
-                    {/* Team Display Area */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl">
-                        {/* Map over teams to display their respective states */}
-                        {[0, 1, 2].map((teamId) => {
-                            const teamSpecificWords = teamWords[teamId] || {}; // Ensure it's an object
-                            const teamSpecificGuessedLetters = guessedLetters[teamId] || []; // Ensure it's an array
-                            const teamSpecificIncorrectGuesses = incorrectGuesses[teamId] || 0; // Ensure it's a number
+                    {/* Game Mode Selection Screen */}
+                    {gameStatus === 'selecting' && (
+                        <div className="mt-8 p-6 bg-white rounded-3xl shadow-2xl border-4 border-indigo-600 w-full max-w-lg flex flex-col items-center justify-center">
+                            <h3 className="text-3xl font-bold text-center text-indigo-700 mb-6 uppercase">SELECIONE O MODO DE JOGO</h3>
+                            <button
+                                onClick={() => initializeGame(1)}
+                                className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-4 px-10 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 text-xl uppercase mb-4 w-full"
+                            >
+                                JOGO SOLO (1 FORCA)
+                            </button>
+                            <button
+                                onClick={() => initializeGame(2)}
+                                className="bg-gradient-to-r from-purple-500 to-pink-600 text-white font-bold py-4 px-10 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 text-xl uppercase mb-4 w-full"
+                            >
+                                DUELO (2 FORCAS)
+                            </button>
+                            <button
+                                onClick={() => initializeGame(3)}
+                                className="bg-gradient-to-r from-teal-500 to-green-600 text-white font-bold py-4 px-10 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 text-xl uppercase w-full"
+                            >
+                                DISPUTA (3 FORCAS)
+                            </button>
+                        </div>
+                    )}
 
-                            return (
-                                <div
-                                    key={teamId}
-                                    className={`p-6 rounded-3xl shadow-xl border-4 transition-all duration-300
-                                        ${currentTeamIndex === teamId ? 'border-indigo-600 bg-white scale-105' : 'border-gray-300 bg-gray-50 opacity-70'}
-                                        ${checkWinWithSpecificGuessedLetters(teamSpecificWords, teamSpecificGuessedLetters) ? 'bg-green-100 border-green-500' : ''}
-                                        ${teamSpecificIncorrectGuesses >= 7 ? 'bg-red-100 border-red-500' : ''}
-                                    `}
-                                >
-                                    <h2 className={`text-2xl font-bold mb-4 text-center ${currentTeamIndex === teamId ? 'text-indigo-700' : 'text-gray-600'} uppercase`}>
-                                        TIME {["ESQUERDO", "MEIO", "DIREITO"][teamId]}
-                                        {checkWinWithSpecificGuessedLetters(teamSpecificWords, teamSpecificGuessedLetters) && <span className="text-green-600 ml-2"> (VENCEU!)</span>}
-                                        {teamSpecificIncorrectGuesses >= 7 && <span className="text-red-600 ml-2"> (ENFORCADO!)</span>}
-                                    </h2>
+                    {/* Team Display Area - only rendered if gameStatus is not 'selecting' */}
+                    {gameStatus !== 'selecting' && (
+                        <div className={`grid grid-cols-1 gap-8 w-full max-w-6xl 
+                            ${numPlayers === 2 ? 'md:grid-cols-2' : numPlayers === 3 ? 'md:grid-cols-3' : 'md:grid-cols-1'}`}>
+                            {/* Map over teams to display their respective states based on numPlayers */}
+                            {Array.from({ length: numPlayers }, (_, i) => i).map((teamId) => {
+                                const teamSpecificWords = teamWords[teamId] || {}; // Ensure it's an object
+                                const teamSpecificGuessedLetters = guessedLetters[teamId] || []; // Ensure it's an array
+                                const teamSpecificIncorrectGuesses = incorrectGuesses[teamId] || 0; // Ensure it's a number
 
-                                    {/* Hangman drawing for each team */}
-                                    <div className="flex justify-center mb-6">
-                                        <HangmanSVG incorrectCount={teamSpecificIncorrectGuesses} />
+                                return (
+                                    <div
+                                        key={teamId}
+                                        className={`p-6 rounded-3xl shadow-xl border-4 transition-all duration-300
+                                            ${currentTeamIndex === teamId ? 'border-indigo-600 bg-white scale-105' : 'border-gray-300 bg-gray-50 opacity-70'}
+                                            ${checkWinWithSpecificGuessedLetters(teamSpecificWords, teamSpecificGuessedLetters) ? 'bg-green-100 border-green-500' : ''}
+                                            ${teamSpecificIncorrectGuesses >= 7 ? 'bg-red-100 border-red-500' : ''}
+                                            ${numPlayers === 1 ? 'md:col-span-1' : numPlayers === 2 ? 'md:col-span-1' : ''} /* Adjust column span for solo/duelo */
+                                        `}
+                                    >
+                                        <h2 className={`text-2xl font-bold mb-4 text-center ${currentTeamIndex === teamId ? 'text-indigo-700' : 'text-gray-600'} uppercase`}>
+                                            TIME {["ESQUERDO", "MEIO", "DIREITO"][teamId]}
+                                            {checkWinWithSpecificGuessedLetters(teamSpecificWords, teamSpecificGuessedLetters) && <span className="text-green-600 ml-2"> (VENCEU!)</span>}
+                                            {teamSpecificIncorrectGuesses >= 7 && <span className="text-red-600 ml-2"> (PERDEU!)</span>}
+                                        </h2>
+
+                                        {/* Hangman drawing for each team */}
+                                        <div className="flex justify-center mb-6">
+                                            <HangmanSVG incorrectCount={teamSpecificIncorrectGuesses} />
+                                        </div>
+
+                                        <div className="mb-6 text-center text-lg font-mono">
+                                            {/* Display masked words as individual cells */}
+                                            {/* Adjusted size and nowrap for solo/duelo modes */}
+                                            <p className="mb-2">LIVRO: <span className={`flex justify-center mt-2 
+                                                ${numPlayers === 1 ? 'gap-2' : numPlayers === 2 ? 'gap-1.5' : 'gap-1'} 
+                                                ${numPlayers <= 2 ? 'flex-nowrap overflow-x-auto' : 'flex-wrap'}`}>
+                                                {getMaskedWord(teamSpecificWords.book, teamSpecificGuessedLetters).map((char, idx) => (
+                                                    <span key={idx} className={`flex-shrink-0 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold 
+                                                        ${numPlayers === 1 ? 'w-12 h-12 text-2xl' : numPlayers === 2 ? 'w-10 h-10 text-xl' : 'w-8 h-8 text-lg'}
+                                                    `}>
+                                                        {char}
+                                                    </span>
+                                                ))}
+                                            </span></p>
+                                            <p className="mb-2">NOME: <span className={`flex justify-center mt-2 
+                                                ${numPlayers === 1 ? 'gap-2' : numPlayers === 2 ? 'gap-1.5' : 'gap-1'} 
+                                                ${numPlayers <= 2 ? 'flex-nowrap overflow-x-auto' : 'flex-wrap'}`}>
+                                                {getMaskedWord(teamSpecificWords.name, teamSpecificGuessedLetters).map((char, idx) => (
+                                                    <span key={idx} className={`flex-shrink-0 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold 
+                                                        ${numPlayers === 1 ? 'w-12 h-12 text-2xl' : numPlayers === 2 ? 'w-10 h-10 text-xl' : 'w-8 h-8 text-lg'}
+                                                    `}>
+                                                        {char}
+                                                    </span>
+                                                ))}
+                                            </span></p>
+                                            <p>LUGAR: <span className={`flex justify-center mt-2 
+                                                ${numPlayers === 1 ? 'gap-2' : numPlayers === 2 ? 'gap-1.5' : 'gap-1'} 
+                                                ${numPlayers <= 2 ? 'flex-nowrap overflow-x-auto' : 'flex-wrap'}`}>
+                                                {getMaskedWord(teamSpecificWords.place, teamSpecificGuessedLetters).map((char, idx) => (
+                                                    <span key={idx} className={`flex-shrink-0 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold 
+                                                        ${numPlayers === 1 ? 'w-12 h-12 text-2xl' : numPlayers === 2 ? 'w-10 h-10 text-xl' : 'w-8 h-8 text-lg'}
+                                                    `}>
+                                                        {char}
+                                                    </span>
+                                                ))}
+                                            </span></p>
+                                        </div>
+
+                                        <div className="text-center text-sm text-gray-600 mb-4 uppercase">
+                                            LETRAS JÁ TENTADAS: <span className="font-semibold text-gray-800">{ (teamSpecificGuessedLetters).map(l => l.toUpperCase()).join(', ') }</span>
+                                        </div>
                                     </div>
+                                );
+                            })}
+                        </div>
+                    )}
 
-                                    <div className="mb-6 text-center text-lg font-mono">
-                                        {/* Display masked words as individual cells */}
-                                        <p className="mb-2">LIVRO: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.book, teamSpecificGuessedLetters).map((char, idx) => (
-                                            <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
-                                                {char}
-                                            </span>
-                                        ))}</span></p>
-                                        <p className="mb-2">NOME: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.name, teamSpecificGuessedLetters).map((char, idx) => (
-                                            <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
-                                                {char}
-                                            </span>
-                                        ))}</span></p>
-                                        <p>LUGAR: <span className="flex justify-center gap-1 mt-2">{getMaskedWord(teamSpecificWords.place, teamSpecificGuessedLetters).map((char, idx) => (
-                                            <span key={idx} className="w-8 h-8 flex items-center justify-center border-b-2 border-indigo-500 bg-indigo-100 rounded-md text-indigo-800 font-semibold text-xl">
-                                                {char}
-                                            </span>
-                                        ))}</span></p>
-                                    </div>
-
-                                    <div className="text-center text-sm text-gray-600 mb-4 uppercase">
-                                        LETRAS JÁ TENTADAS: <span className="font-semibold text-gray-800">{ (teamSpecificGuessedLetters).map(l => l.toUpperCase()).join(', ') }</span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Current Team's Input Area */}
+                    {/* Current Team's Input Area - only rendered if gameStatus is 'playing' */}
                     {gameStatus === 'playing' && (
                         <div className="mt-8 p-6 bg-white rounded-3xl shadow-2xl border-4 border-indigo-600 w-full max-w-lg">
                             <h3 className="text-3xl font-bold text-center text-indigo-700 mb-6 uppercase">
@@ -566,23 +610,27 @@
                         </div>
                     )}
 
-                    {/* Restart Button */}
-                    {(gameStatus === 'won' || gameStatus === 'lost' || gameStatus === 'ended') && (
-                        <button
-                            onClick={initializeGame}
-                            className="mt-8 bg-gradient-to-r from-yellow-500 to-orange-600 text-white font-bold py-4 px-10 rounded-xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition duration-300 text-xl uppercase"
-                        >
-                            JOGAR NOVAMENTE
-                        </button>
+                    {/* Restart and Zerar Tudo Buttons - displayed when game ends or is not in selection mode */}
+                    {(gameStatus === 'won' || gameStatus === 'lost' || gameStatus === 'ended' || gameStatus === 'playing') && (
+                        <div className="flex flex-col md:flex-row gap-4 mt-8">
+                            {/* Restart Button */}
+                            {(gameStatus === 'won' || gameStatus === 'lost' || gameStatus === 'ended') && (
+                                <button
+                                    onClick={() => initializeGame(numPlayers)} // Restart with current number of players
+                                    className="bg-gradient-to-r from-yellow-500 to-orange-600 text-white font-bold py-4 px-10 rounded-xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition duration-300 text-xl uppercase"
+                                >
+                                    JOGAR NOVAMENTE
+                                </button>
+                            )}
+                            {/* "Zerar Tudo e Reiniciar" Button */}
+                            <button
+                                onClick={() => setGameStatus('selecting')} // Go back to game selection
+                                className="bg-red-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 text-lg uppercase"
+                            >
+                                ZERAR TUDO E REINICIAR
+                            </button>
+                        </div>
                     )}
-
-                    {/* New "Zerar Tudo" Button */}
-                    <button
-                        onClick={initializeGame} // A função initializeGame já reseta todo o estado para o início.
-                        className="mt-4 bg-red-600 text-white font-bold py-3 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition duration-300 text-lg uppercase"
-                    >
-                        ZERAR TUDO E REINICIAR
-                    </button>
                 </div>
             );
         };
